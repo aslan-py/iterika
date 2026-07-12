@@ -203,36 +203,30 @@ class TestBuildPrompt:
     def test_prompt_contains_product_name(self) -> None:
         """Промпт содержит название товара."""
         p = _make_product('1', 'Nike Air Force', 5000.0)
-        assert 'Nike Air Force' in _build_prompt([p], _STATS)
+        assert 'Nike Air Force' in _build_prompt([p])
 
     def test_prompt_contains_category(self) -> None:
         """Промпт содержит категорию товаров."""
         p = _make_product('1', 'Тест', 1000.0)
-        assert 'кроссовки' in _build_prompt([p], _STATS)
+        assert 'кроссовки' in _build_prompt([p])
 
-    def test_prompt_contains_price_boundaries(self) -> None:
-        """Промпт содержит конкретные ценовые границы из stats."""
-        p = _make_product('1', 'T', 1000.0)
-        prompt = _build_prompt([p], _STATS)
-        assert '1000' in prompt   # p_low
-        assert '15000' in prompt  # p_high
-
-    def test_prompt_mentions_classification_rules(self) -> None:
-        """Промпт содержит блок правил классификации."""
+    def test_prompt_is_brand_centric(self) -> None:
+        """Промпт опирается на бренд, а не на ценовые границы."""
         p = _make_product('1', 'iPhone', 1000.0)
-        prompt = _build_prompt([p], _STATS)
-        assert 'Правила классификации' in prompt
-        assert 'ПРЕМИУМ' in prompt
+        prompt = _build_prompt([p])
+        assert 'БРЕНД' in prompt
+        # ценовых границ выборки в промпте больше нет
+        assert 'Ценовые границы' not in prompt
 
     def test_prompt_contains_expected_count(self) -> None:
         """Промпт содержит ожидаемое количество ответов."""
         products = [_make_product(str(i), f'T{i}', 1000.0) for i in range(5)]
-        assert '5' in _build_prompt(products, _STATS)
+        assert '5' in _build_prompt(products)
 
     def test_prompt_mentions_all_segments(self) -> None:
         """Промпт описывает все три сегмента."""
         p = _make_product('1', 'Test', 1000.0)
-        prompt = _build_prompt([p], _STATS)
+        prompt = _build_prompt([p])
         assert 'Эконом' in prompt
         assert 'Стандарт' in prompt
         assert 'Премиум' in prompt

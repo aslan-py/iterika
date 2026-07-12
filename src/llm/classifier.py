@@ -82,8 +82,8 @@ def _representative(group: list[Product]) -> Product:
     return ordered[len(ordered) // 2]
 
 
-def _build_prompt(products: list[Product], stats: PriceStats) -> str:
-    """Строит промпт из шаблона: границы цен, правила и список товаров."""
+def _build_prompt(products: list[Product]) -> str:
+    """Строит промпт из шаблона: правила и список товаров (с брендом)."""
     category = products[0].category if products else 'товары'
     items = [
         {
@@ -97,8 +97,6 @@ def _build_prompt(products: list[Product], stats: PriceStats) -> str:
     body = json.dumps(items, ensure_ascii=False, indent=2)
     return _PROMPT_TEMPLATE.format(
         category=category,
-        p_low=stats.p_low,
-        p_high=stats.p_high,
         rules=_CLASSIFICATION_RULES,
         body=body,
         count=len(products),
@@ -140,7 +138,6 @@ def _make_client() -> AsyncOpenAI | None:
 async def _call_llm(
     client: AsyncOpenAI,
     products: list[Product],
-    stats: PriceStats,
 ) -> list[str]:
     """Один запрос к DeepSeek; возвращает список сегментов."""
     response = await client.chat.completions.create(
@@ -148,7 +145,7 @@ async def _call_llm(
         response_format={'type': 'json_object'},
         messages=[
             {'role': 'system', 'content': _SYSTEM},
-            {'role': 'user', 'content': _build_prompt(products, stats)},
+            {'role': 'user', 'content': _build_prompt(products)},
         ],
         temperature=0.1,
     )
@@ -163,9 +160,13 @@ async def _classify_batch(
     products: list[Product],
     stats: PriceStats,
 ) -> list[str]:
-    """Классифицирует один батч; при ошибке — fallback по цене."""
+    """Классифицирует один батч; при ошибке — fallback по цене.
+
+    Промпт LLM опирается на бренд (без ценовых границ). stats нужен
+    только для ценового fallback, если LLM недоступен.
+    """
     try:
-        segments = await _call_llm(client, products, stats)
+        segments = await _call_llm(client, products)
     except Exception as exc:
         logger.warning('LLM ошибка ({}), fallback по цене', exc)
         return _fallback_by_price(products, stats)
