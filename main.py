@@ -21,6 +21,7 @@
 """
 import argparse
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -38,6 +39,7 @@ from src.redis_client import (
     make_redis,
     mark_tasks_created,
 )
+from src.report import build_report, log_summary, save_report
 from src.storage import load_latest_products, load_latest_raw
 
 
@@ -149,7 +151,12 @@ async def stage_reset() -> None:
 
 
 async def run_full(fresh: bool, use_cache: bool = True) -> None:
-    """Полный пайплайн: результаты передаются между этапами напрямую."""
+    """Полный пайплайн: результаты передаются между этапами напрямую.
+
+    В конце собирает и сохраняет отчёт о прогоне (report.json + сводка).
+    """
+    started_at = datetime.now(timezone.utc)
+
     raw = await stage_parse(fresh)
     if not raw:
         return
@@ -157,12 +164,10 @@ async def run_full(fresh: bool, use_cache: bool = True) -> None:
     classified = await stage_llm(products, use_cache=use_cache)
     tasks = await stage_crm(classified)
 
-    logger.info(
-        'Готово: {} товаров, {} с сегментом, {} задач в CRM',
-        len(classified),
-        sum(1 for p in classified if p.segment is not None),
-        len(tasks),
-    )
+    # Этап 5 — отчёт о прогоне
+    report = build_report(raw, products, classified, len(tasks), started_at)
+    save_report(report)
+    log_summary(report)
 
 
 async def run_stages(args: argparse.Namespace) -> None:
