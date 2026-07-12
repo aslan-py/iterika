@@ -11,15 +11,17 @@ _PAGE_50 = [{'id': i, 'name': f'Товар {i}'} for i in range(50)]
 
 
 @pytest.fixture(autouse=True)
-def _clean_checkpoint(
-    tmp_path: object, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Изолирует checkpoint в temp-папку и сбрасывает настройки."""
-    monkeypatch.setenv('OUTPUT_DIR', 'output')
-    monkeypatch.setenv('DEMO_MODE', 'true')
-    monkeypatch.setenv('DEMO_LIMIT', '150')
-    monkeypatch.setenv('WB_DELAY_MIN', '0')
-    monkeypatch.setenv('WB_DELAY_MAX', '0')
+def _settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Настраивает лимиты для тестов независимо от .env.
+
+    settings — синглтон, прочитанный при импорте, поэтому setenv на
+    него не влияет: патчим атрибуты объекта напрямую (setattr).
+    """
+    from src.parser import wb
+    monkeypatch.setattr(wb.settings, 'demo_mode', True)
+    monkeypatch.setattr(wb.settings, 'demo_limit', 150)
+    monkeypatch.setattr(wb.settings, 'wb_delay_min', 0.0)
+    monkeypatch.setattr(wb.settings, 'wb_delay_max', 0.0)
 
 
 class TestFetchPage:

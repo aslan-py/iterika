@@ -414,6 +414,10 @@ class TestClassifyAll:
         with (
             patch('src.llm.classifier.make_redis', return_value=mock_redis),
             patch('src.llm.classifier.get_segment', return_value='Премиум'),
+            patch(
+                'src.llm.classifier._make_client',
+                return_value=AsyncMock(),
+            ),
             patch('src.llm.classifier._classify_batch', new=_stub),
         ):
             result = await classify_all(products, use_cache=False)
