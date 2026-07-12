@@ -149,3 +149,30 @@ class TestNormalizeMany:
         from src.models import Product
         products = normalize_many([_RAW_VALID])
         assert all(isinstance(p, Product) for p in products)
+
+    def test_deduplication_keeps_first_occurrence(self) -> None:
+        """Дублирующийся id встречается в результате ровно один раз."""
+        raw_list = [_RAW_VALID, _RAW_VALID, _RAW_VALID]
+        products = normalize_many(raw_list)
+        assert len(products) == 1
+
+    def test_deduplication_preserves_unique_ids(self) -> None:
+        """Товары с разными id не отбрасываются."""
+        raw_list = [
+            _RAW_VALID,
+            {**_RAW_VALID, 'id': 99999, 'name': 'Другой товар'},
+        ]
+        products = normalize_many(raw_list)
+        assert len(products) == 2
+
+    def test_deduplication_mixed_valid_and_duplicate(self) -> None:
+        """Из трёх записей (2 дубля + 1 уникальная) остаётся 2."""
+        raw_list = [
+            _RAW_VALID,
+            _RAW_VALID,
+            {**_RAW_VALID, 'id': 77777, 'name': 'Уникальный'},
+        ]
+        products = normalize_many(raw_list)
+        ids = [p.id for p in products]
+        assert len(products) == 2
+        assert ids.count('12345678') == 1

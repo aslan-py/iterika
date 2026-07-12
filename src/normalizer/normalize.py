@@ -53,35 +53,46 @@ def normalize_many(
 ) -> list[Product]:
     """Нормализует список сырых товаров WB.
 
-    Пропускает невалидные записи с логированием. Все товары одного прогона
-    получают одну метку времени collected_at.
+    Пропускает невалидные записи и дубли по id. Все товары одного
+    прогона получают одну метку времени collected_at.
     """
     ts = collected_at or datetime.now(timezone.utc)
     result: list[Product] = []
+    seen_ids: set[str] = set()
     skipped = 0
+    duplicates = 0
 
     for raw in raw_products:
         product = normalize_one(raw, collected_at=ts)
         if product is None:
             skipped += 1
             continue
+        if product.id in seen_ids:
+            duplicates += 1
+            continue
+        seen_ids.add(product.id)
         result.append(product)
 
     logger.info(
-        'Нормализация: {} товаров → {} успешно, {} пропущено',
+        'Нормализация: {} → {} уникальных, {} невалидных, {} дублей',
         len(raw_products),
         len(result),
         skipped,
+        duplicates,
     )
     return result
 
 
-def save_normalized(products: list[Product], output_dir: str = '') -> Path:
-    """Сохраняет нормализованные товары в JSON-файл с меткой времени UTC."""
+def save_normalized(
+    products: list[Product],
+    output_dir: str = '',
+    filename_prefix: str = 'normalized',
+) -> Path:
+    """Сохраняет товары в JSON-файл с меткой времени UTC."""
     out = Path(output_dir or settings.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M')
-    path = out / f'normalized_{ts}.json'
+    path = out / f'{filename_prefix}_{ts}.json'
     path.write_text(
         json.dumps(
             [p.model_dump(mode='json') for p in products],

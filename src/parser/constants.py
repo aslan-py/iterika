@@ -10,4 +10,6 @@ WB_HEADERS: dict[str, str] = {
     ),
     'Accept': '*/*',
     'Accept-Language': 'ru-RU,ru;q=0.9',
+    'Origin': 'https://www.wildberries.ru',
+    'Referer': 'https://www.wildberries.ru/',
 }
