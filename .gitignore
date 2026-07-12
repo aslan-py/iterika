@@ -34,3 +34,4 @@ logs/
 .idea/
 *.swp
 /.claude
+/notebooks

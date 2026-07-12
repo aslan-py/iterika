@@ -1,0 +1,42 @@
+# Секреты — НЕ должны попасть в образ
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Виртуальное окружение (образ ставит зависимости сам)
+.venv/
+venv/
+
+# Тесты и линт
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Выходные данные и логи
+output/
+logs/
+
+# Jupyter
+notebooks/
+.ipynb_checkpoints/
+
+# Git и IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+
+# Служебное
+.claude/
+README.md
+AI_USAGE.md
