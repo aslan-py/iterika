@@ -1,8 +1,6 @@
 """Тесты нормализатора WB → Product."""
 from datetime import datetime, timezone
 
-import pytest
-
 from src.normalizer.normalize import normalize_many, normalize_one
 
 _TS = datetime(2026, 7, 12, 12, 0, 0, tzinfo=timezone.utc)

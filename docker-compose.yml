@@ -1,7 +1,25 @@
 services:
+  # Само приложение. При `docker compose up --build` собирается из
+  # Dockerfile и прогоняет весь пайплайн (в DEMO_MODE — быстрое демо).
+  # Результаты появляются в ./output на хосте через volume.
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # Внутри compose Redis доступен по имени сервиса, а не localhost
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+
   redis:
     image: redis:7-alpine
     ports:
+      # Порт наружу — Redis доступен и app-контейнеру (redis:6379),
+      # и локальному коду с ПК (localhost:6379)
       - "6379:6379"
     volumes:
       - redis_data:/data

@@ -20,7 +20,10 @@ def _extract_price(raw: dict[str, Any]) -> float:
         return 0.0
 
 
-def normalize_one(raw: dict[str, Any], collected_at: datetime | None = None) -> Product | None:
+def normalize_one(
+    raw: dict[str, Any],
+    collected_at: datetime | None = None,
+) -> Product | None:
     """Конвертирует один сырой товар WB в объект Product.
 
     Возвращает None если товар невалиден (нет id или нулевая цена).

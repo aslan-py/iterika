@@ -4,9 +4,11 @@ WORKDIR /app
 
 RUN pip install uv
 
+# Ставим только прод-зависимости (без dev: pytest, ruff)
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 COPY . .
 
-CMD ["uv", "run", "python", "main.py"]
+# Запуск всего пайплайна: парсинг → нормализация → LLM → CRM → отчёт
+CMD ["uv", "run", "--no-dev", "python", "main.py"]

@@ -105,7 +105,10 @@ async def fetch_products(fresh: bool = False) -> list[dict[str, Any]]:
                 break
 
             if not products:
-                logger.info('Страница {} пуста — конец каталога, checkpoint сохранён', page)
+                logger.info(
+                    'Страница {} пуста — конец каталога, checkpoint сохранён',
+                    page,
+                )
                 break
 
             remaining = limit - len(collected)
@@ -126,7 +129,9 @@ async def fetch_products(fresh: bool = False) -> list[dict[str, Any]]:
                 break
 
             page += 1
-            delay = random.uniform(settings.wb_delay_min, settings.wb_delay_max)
+            delay = random.uniform(
+                settings.wb_delay_min, settings.wb_delay_max
+            )
             logger.debug('Пауза {:.1f}с перед страницей {}', delay, page)
             await asyncio.sleep(delay)
 

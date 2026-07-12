@@ -577,4 +577,41 @@ classified_смартфоны_2026-07-12_19-23-08.json
 - **Только полный прогон** — при `--llm` в одиночку нет данных парсинга; неполный отчёт бессмысленен (решение пользователя)
 - **skipped = raw − normalized** — покрывает и дубли, и битые записи; для ТЗ «сколько собрано / сколько ошибок» этого достаточно
 
+---
+
+### Сессия 19 — Этап 8: CI/CD (GitHub Actions) + Telegram-уведомления (2026-07-12)
+
+**Модель:** Claude Opus 4.8 (Claude Code)
+
+**Итог сессии:** закрыт технический долг по длинным строкам (10 нарушений ruff в старых файлах), настроен CI/CD на GitHub Actions: линт (ruff) + тесты (pytest) на push/PR. Добавлено Telegram-уведомление о прохождении/падении CI. Переменные Telegram добавлены в `.env` / `.env.example`.
+
+**Промпты:**
+- **Prompt 1** — «Что по плану тестов? Docker вроде сделали. Давай сделаем CI. Предлагаю добавить ruff — достаточно ли этого на этапе проверки? И оповещение в Telegram, что CI/CD пройден. Добавь telegram_token в .env и .env.example»
+
+**Разобранные вопросы:**
+- **Достаточно ли ruff в CI?** Нет. ruff — качество кода (стиль, ошибки, импорты), pytest — работает ли код. Можно пройти ruff со сломанным кодом. Нужны оба
+- **Telegram-токен в .env?** Для CI токен нельзя брать из `.env` — GitHub Actions его не видит (в .gitignore). Токен кладётся в GitHub Secrets (Settings → Secrets → Actions). В `.env.example` добавлен как документация
+
+**Что сделано:**
+- Закрыт долг длинных строк: `checkpoint.py` (4), `wb.py` (2), `normalize.py` (1), `test_parser.py` (1) — разбиты на многострочные; автофиксом убраны unused-import и unsorted-imports в тестах
+- `.github/workflows/ci.yml` (новый) — job на ubuntu: setup-uv → `uv sync` → `ruff check .` → `pytest` → Telegram-уведомление (success/failure через curl к Bot API, `continue-on-error` чтобы отсутствие секретов не роняло CI)
+- `.env` / `.env.example` — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` с пояснением про GitHub Secrets
+- Весь проект: `ruff check .` — All checks passed; 100 тестов зелёные
+
+**Docker (Этап 7 — возвращён app-сервис):**
+- `docker-compose.yml` — добавлен сервис `app` (build из Dockerfile, `env_file: .env`, `REDIS_URL=redis://redis:6379/0` override, depends_on redis healthy, volumes output+logs)
+- Redis торчит портом `6379:6379` наружу → доступен и app-контейнеру, и локальному коду с ПК одновременно
+- `Dockerfile` — CMD `uv run --no-dev python main.py` (полный пайплайн)
+- три сценария запуска: (1) локально + Redis в Docker, (2) `docker compose up --build` автопрогон, (3) `docker compose run --rm app uv run main.py --флаги` поэтапно
+- `.env` редактируется на ПК до запуска; Docker подхватывает через `env_file` — внутрь контейнера заходить не надо
+- `.github/workflows/ci.yml` — job `docker-build`: `docker build` (проверка сборки образа, без запуска пайплайна — в CI нет секретов и смысла парсить WB)
+
+**Архитектурные решения:**
+- **ruff + pytest, а не только ruff** — линт и тесты проверяют ортогональные свойства (чистота vs работоспособность)
+- **Telegram-токен в Secrets, не в .env** — CI не имеет доступа к локальному `.env`; секреты CI — только через GitHub Secrets
+- **continue-on-error на уведомлении** — если Secrets не заданы, CI не падает из-за шага нотификации; сам линт/тесты остаются обязательными
+- **Долг закрыт перед CI** — иначе первый же прогон CI был бы красным на линте старых файлов
+- **app-сервис с автозапуском + docker compose run для этапов** — `up` даёт демо «одной кнопкой», `run` даёт доступ ко всему CLI внутри контейнера; ничего дополнительно кодить не нужно
+- **CI собирает образ, но не запускает** — сборка проверяет корректность Dockerfile; запуск пайплайна требует секретов и сети, это дело локального демо
+
 

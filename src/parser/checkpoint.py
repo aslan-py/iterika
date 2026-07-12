@@ -11,31 +11,40 @@ _PARTIAL = _DIR / 'wb_partial.json'
 
 
 def save(page: int, query: str, products: list[dict]) -> None:
-    """Сохраняет прогресс: метаданные в checkpoint.json, товары в wb_partial.json."""
+    """Сохраняет прогресс: метаданные и товары в partial-файл."""
     _DIR.mkdir(parents=True, exist_ok=True)
     _PARTIAL.write_text(
         json.dumps(products, ensure_ascii=False, indent=2),
         encoding='utf-8',
     )
     _META.write_text(
-        json.dumps({'page': page, 'query': query, 'collected': len(products)},
-                   ensure_ascii=False),
+        json.dumps(
+            {'page': page, 'query': query, 'collected': len(products)},
+            ensure_ascii=False,
+        ),
         encoding='utf-8',
     )
-    logger.debug('Checkpoint: следующая страница {}, собрано {}', page, len(products))
+    logger.debug(
+        'Checkpoint: следующая страница {}, собрано {}',
+        page,
+        len(products),
+    )
 
 
 def load(query: str) -> tuple[int, list[dict]] | None:
-    """Загружает прогресс если checkpoint существует и запрос совпадает.
+    """Загружает прогресс, если checkpoint есть и запрос совпадает.
 
-    Возвращает (следующая_страница, собранные_товары) или None если нужно начать заново.
+    Возвращает (следующая_страница, собранные_товары) или None,
+    если нужно начать заново.
     """
     if not _META.exists():
         return None
     try:
         data = json.loads(_META.read_text(encoding='utf-8'))
     except Exception as exc:
-        logger.warning('Не удалось прочитать checkpoint: {} — начинаем заново', exc)
+        logger.warning(
+            'Не удалось прочитать checkpoint: {} — начинаем заново', exc
+        )
         return None
     if data.get('query') != query:
         logger.info(

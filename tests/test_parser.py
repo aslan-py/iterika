@@ -1,6 +1,6 @@
 """Тесты парсера Wildberries."""
-import pytest
 import httpx
+import pytest
 import respx
 
 from src.parser.constants import WB_SEARCH_URL
@@ -11,7 +11,9 @@ _PAGE_50 = [{'id': i, 'name': f'Товар {i}'} for i in range(50)]
 
 
 @pytest.fixture(autouse=True)
-def _clean_checkpoint(tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+def _clean_checkpoint(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Изолирует checkpoint в temp-папку и сбрасывает настройки."""
     monkeypatch.setenv('OUTPUT_DIR', 'output')
     monkeypatch.setenv('DEMO_MODE', 'true')
