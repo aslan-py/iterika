@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     # Wildberries
-    wb_query: str = 'кросовки'
+    wb_query: str = 'кросcовки'
     wb_max_products: int = 10_000
     wb_delay_min: float = 1.0
     wb_delay_max: float = 3.0

@@ -105,17 +105,17 @@ async def fetch_products(fresh: bool = False) -> list[dict[str, Any]]:
                 break
 
             if not products:
-                logger.info('Страница {} пуста — конец каталога', page)
-                checkpoint.delete()
+                logger.info('Страница {} пуста — конец каталога, checkpoint сохранён', page)
                 break
 
             remaining = limit - len(collected)
             batch = products[:remaining]
             collected.extend(batch)
             logger.info(
-                'Страница {}: +{} товаров (итого {} / {})',
+                'Страница {}: +{} товаров [{}] (итого {} / {})',
                 page,
                 len(batch),
+                settings.wb_query,
                 len(collected),
                 limit,
             )
@@ -143,7 +143,7 @@ def save_raw(
     """Сохраняет список сырых товаров WB в JSON-файл с меткой времени UTC."""
     out = Path(output_dir or settings.output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M')
     path = out / f'wb_raw_{ts}.json'
     path.write_text(
         json.dumps(products, ensure_ascii=False, indent=2),
