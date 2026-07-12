@@ -7,6 +7,7 @@ from loguru import logger
 
 from src.config import settings
 from src.models import Product
+from src.storage import build_filename
 
 _WB_PRODUCT_URL = 'https://www.wildberries.ru/catalog/{id}/detail.aspx'
 
@@ -87,12 +88,13 @@ def save_normalized(
     products: list[Product],
     output_dir: str = '',
     filename_prefix: str = 'normalized',
+    category: str = '',
 ) -> Path:
-    """Сохраняет товары в JSON-файл с меткой времени UTC."""
+    """Сохраняет товары в JSON. Имя включает категорию товаров."""
     out = Path(output_dir or settings.output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M')
-    path = out / f'{filename_prefix}_{ts}.json'
+    cat = category or (products[0].category if products else settings.wb_query)
+    path = out / build_filename(filename_prefix, cat)
     path.write_text(
         json.dumps(
             [p.model_dump(mode='json') for p in products],

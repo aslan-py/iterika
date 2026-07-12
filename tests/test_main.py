@@ -15,13 +15,14 @@ def _json_files(directory: Path) -> list[Path]:
 
 def _args(**flags: bool) -> argparse.Namespace:
     """Строит Namespace с дефолтными False для всех флагов CLI."""
-    defaults = {
+    defaults: dict = {
         'fresh': False,
         'parsing': False,
         'normalizer': False,
         'llm': False,
         'crm': False,
         'reset': False,
+        'category': '',
     }
     defaults.update(flags)
     return argparse.Namespace(**defaults)
@@ -84,15 +85,15 @@ class TestRunStages:
             calls.append('parse')
             return [{'id': 1}]
 
-        def _normalize(data: object) -> list:
+        def _normalize(data: object, category: str = '') -> list:
             calls.append('normalize')
             return ['product']
 
-        async def _llm(data: object) -> list:
+        async def _llm(data: object, category: str = '') -> list:
             calls.append('llm')
             return ['classified']
 
-        async def _crm(data: object) -> list:
+        async def _crm(data: object, category: str = '') -> list:
             calls.append('crm')
             return []
 
@@ -117,7 +118,7 @@ class TestRunStages:
             calls.append('parse')
             return [{'id': 1}]
 
-        def _normalize(data: object) -> list:
+        def _normalize(data: object, category: str = '') -> list:
             calls.append('normalize')
             return ['product']
 
@@ -138,7 +139,7 @@ class TestRunStages:
         async def _parse(fresh: bool) -> list:
             return [{'id': 1}]
 
-        async def _llm(data: object) -> list:
+        async def _llm(data: object, category: str = '') -> list:
             received['llm_arg'] = data
             return ['classified']
 
@@ -155,7 +156,7 @@ class TestRunStages:
     @pytest.mark.asyncio
     async def test_fresh_without_parsing_warns(self) -> None:
         """--fresh без --parsing пишет предупреждение и не роняет."""
-        async def _llm(data: object) -> list:
+        async def _llm(data: object, category: str = '') -> list:
             return ['classified']
 
         with (

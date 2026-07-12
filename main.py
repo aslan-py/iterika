@@ -48,10 +48,12 @@ async def stage_parse(fresh: bool) -> list[dict]:
     return raw_products
 
 
-def stage_normalize(raw_products: list[dict] | None = None) -> list:
+def stage_normalize(
+    raw_products: list[dict] | None = None, category: str = ''
+) -> list:
     """Этап 2 — нормализация. Без аргумента берёт последний wb_raw."""
     if raw_products is None:
-        raw_products = load_latest_raw()
+        raw_products = load_latest_raw(category)
         if raw_products is None:
             logger.error(
                 'Нет файла парсинга для нормализации — '
@@ -59,14 +61,16 @@ def stage_normalize(raw_products: list[dict] | None = None) -> list:
             )
             return []
     products = normalize_many(raw_products)
-    save_normalized(products)
+    save_normalized(products, category=category)
     return products
 
 
-async def stage_llm(products: list | None = None) -> list:
+async def stage_llm(
+    products: list | None = None, category: str = ''
+) -> list:
     """Этап 3 — LLM-классификация. Без аргумента берёт последний normalized."""
     if products is None:
-        products = load_latest_products('normalized')
+        products = load_latest_products('normalized', category)
         if products is None:
             logger.error(
                 'Нет нормализованного файла — '
@@ -74,11 +78,15 @@ async def stage_llm(products: list | None = None) -> list:
             )
             return []
     classified = await classify_all(products)
-    save_normalized(classified, filename_prefix='classified')
+    save_normalized(
+        classified, filename_prefix='classified', category=category
+    )
     return classified
 
 
-async def stage_crm(products: list | None = None) -> list:
+async def stage_crm(
+    products: list | None = None, category: str = ''
+) -> list:
     """Этап 4 — задачи в CRM. Без аргумента берёт последний classified.
 
     Через Redis запоминает id товаров с уже созданными задачами, чтобы
@@ -86,7 +94,7 @@ async def stage_crm(products: list | None = None) -> list:
     Стандарт → Эконом), а не дублировал предыдущие.
     """
     if products is None:
-        products = load_latest_products('classified')
+        products = load_latest_products('classified', category)
         if products is None:
             logger.error(
                 'Нет финального classified-файла с сегментами — '
@@ -162,6 +170,7 @@ async def run_stages(args: argparse.Namespace) -> None:
     """
     data: list | None = None   # результат последнего выполненного этапа
     ran_previous = False       # выполнялся ли непосредственно предыдущий
+    category = args.category
 
     if args.parsing:
         data = await stage_parse(args.fresh)
@@ -172,7 +181,9 @@ async def run_stages(args: argparse.Namespace) -> None:
         ran_previous = False
 
     if args.normalizer:
-        data = stage_normalize(data if ran_previous else None)
+        data = stage_normalize(
+            data if ran_previous else None, category=category
+        )
         if not data:
             return
         ran_previous = True
@@ -180,7 +191,9 @@ async def run_stages(args: argparse.Namespace) -> None:
         ran_previous = False
 
     if args.llm:
-        data = await stage_llm(data if ran_previous else None)
+        data = await stage_llm(
+            data if ran_previous else None, category=category
+        )
         if not data:
             return
         ran_previous = True
@@ -188,7 +201,9 @@ async def run_stages(args: argparse.Namespace) -> None:
         ran_previous = False
 
     if args.crm:
-        await stage_crm(data if ran_previous else None)
+        await stage_crm(
+            data if ran_previous else None, category=category
+        )
 
 
 async def _dispatch(args: argparse.Namespace) -> None:
@@ -244,6 +259,12 @@ def _parse_args() -> argparse.Namespace:
         '--reset',
         action='store_true',
         help='очистить output/ и кэш Redis (выполняется до этапов)',
+    )
+    parser.add_argument(
+        '--category',
+        default='',
+        help='категория для загрузки файла на отдельном этапе '
+             '(например --crm --category смартфоны)',
     )
     return parser.parse_args()
 

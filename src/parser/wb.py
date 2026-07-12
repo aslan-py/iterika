@@ -1,7 +1,6 @@
 import asyncio
 import json
 import random
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,7 @@ from tenacity import (
 from src.config import settings
 from src.parser import checkpoint
 from src.parser.constants import WB_HEADERS, WB_SEARCH_URL
+from src.storage import build_filename
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
@@ -139,12 +139,12 @@ async def fetch_products(fresh: bool = False) -> list[dict[str, Any]]:
 def save_raw(
     products: list[dict[str, Any]],
     output_dir: str = '',
+    category: str = '',
 ) -> Path:
-    """Сохраняет список сырых товаров WB в JSON-файл с меткой времени UTC."""
+    """Сохраняет сырые товары WB в JSON. Имя включает категорию."""
     out = Path(output_dir or settings.output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M')
-    path = out / f'wb_raw_{ts}.json'
+    path = out / build_filename('wb_raw', category or settings.wb_query)
     path.write_text(
         json.dumps(products, ensure_ascii=False, indent=2),
         encoding='utf-8',
