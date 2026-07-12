@@ -10,6 +10,10 @@ from src.config import settings
 # Одна модель = один ключ = один сегмент для всех продавцов.
 _KEY_PREFIX = 'seg:v2:'
 
+# Множество id товаров, по которым уже созданы задачи в CRM.
+# Позволяет при повторном запуске брать следующие позиции, а не дубли.
+_CRM_DONE_KEY = 'crm:done:v1'
+
 
 async def make_redis() -> aioredis.Redis | None:
     """Создаёт Redis-клиент; None если URL не задан или Redis недоступен."""
@@ -57,3 +61,18 @@ async def store_segments(
         )
     await pipe.execute()
     logger.debug('Redis: сохранено {} сегментов', len(segments))
+
+
+async def get_created_task_ids(client: aioredis.Redis) -> set[str]:
+    """Возвращает id товаров, по которым уже созданы задачи в CRM."""
+    return set(await client.smembers(_CRM_DONE_KEY))
+
+
+async def mark_tasks_created(
+    client: aioredis.Redis, product_ids: list[str]
+) -> None:
+    """Помечает товары как отправленные в CRM (чтобы не повторять)."""
+    if not product_ids:
+        return
+    await client.sadd(_CRM_DONE_KEY, *product_ids)
+    logger.debug('Redis: помечено {} задач как созданные', len(product_ids))

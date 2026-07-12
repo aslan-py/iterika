@@ -26,7 +26,15 @@ FILE_CONFIG: dict = {
     'encoding': 'utf-8',
 }
 
-MODULES = ('parser', 'normalizer', 'llm', 'crm')
+# Каждый лог-файл собирает записи из перечисленных префиксов имён.
+# Redis-клиент (src.redis_client) — часть LLM-этапа (кэш сегментов),
+# поэтому его логи направляются в llm.log.
+MODULE_PREFIXES: dict[str, tuple[str, ...]] = {
+    'parser': ('src.parser',),
+    'normalizer': ('src.normalizer', 'src.storage'),
+    'llm': ('src.llm', 'src.redis_client'),
+    'crm': ('src.crm',),
+}
 
 
 def setup_logging(log_dir: str = LOG_DIR) -> None:
@@ -54,12 +62,12 @@ def setup_logging(log_dir: str = LOG_DIR) -> None:
     logger.add(log_path / 'total.log', **FILE_CONFIG)
 
     # Отдельный файл на каждый модуль
-    for module in MODULES:
+    for module, prefixes in MODULE_PREFIXES.items():
         logger.add(
             log_path / f'{module}.log',
             **FILE_CONFIG,
-            filter=lambda r, m=module: (
-                (r['name'] or '').startswith(f'src.{m}')
+            filter=lambda r, p=prefixes: (
+                (r['name'] or '').startswith(p)
             ),
         )
 

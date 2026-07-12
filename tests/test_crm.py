@@ -1,6 +1,7 @@
 """Тесты отбора позиций и интеграции с AmoCRM."""
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -10,6 +11,7 @@ import src.crm.amocrm as _amo
 from src.crm.amocrm import _build_task, create_tasks
 from src.crm.selector import select_interesting
 from src.models import Product, Segment
+from src.redis_client import get_created_task_ids, mark_tasks_created
 
 _TS = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
 
@@ -79,6 +81,67 @@ class TestSelectInteresting:
         result = select_interesting(products, limit=2)
         names = {p.name for p in result}
         assert names == {'iPhone 15', 'Galaxy S24'}
+
+    def test_exclude_ids_skips_created(self) -> None:
+        """Товары из exclude_ids пропускаются — берутся следующие."""
+        products = [
+            _make_product('1', 'iPhone 15', 90000.0, Segment.PREMIUM.value),
+            _make_product('2', 'Galaxy S24', 85000.0, Segment.PREMIUM.value),
+            _make_product('3', 'Pixel 8', 80000.0, Segment.PREMIUM.value),
+        ]
+        result = select_interesting(products, limit=2, exclude_ids={'1'})
+        ids = {p.id for p in result}
+        assert '1' not in ids
+        assert ids == {'2', '3'}
+
+    def test_priority_order_across_segments(self) -> None:
+        """Сначала выбирается весь Премиум, затем Стандарт, затем Эконом."""
+        products = [
+            _make_product('1', 'Эконом-товар', 500.0, Segment.ECONOMY.value),
+            _make_product('2', 'Премиум-товар', 90000.0,
+                          Segment.PREMIUM.value),
+            _make_product('3', 'Стандарт-товар', 20000.0,
+                          Segment.STANDARD.value),
+        ]
+        # первый вызов → Премиум
+        first = select_interesting(products, limit=1)
+        assert first[0].segment == Segment.PREMIUM.value
+        # исключаем Премиум → следующий Стандарт
+        second = select_interesting(products, limit=1, exclude_ids={'2'})
+        assert second[0].segment == Segment.STANDARD.value
+        # исключаем Премиум и Стандарт → Эконом
+        third = select_interesting(
+            products, limit=1, exclude_ids={'2', '3'}
+        )
+        assert third[0].segment == Segment.ECONOMY.value
+
+
+class TestCrmTracking:
+    """Тесты Redis-трекинга созданных задач."""
+
+    @pytest.mark.asyncio
+    async def test_get_created_task_ids_returns_set(self) -> None:
+        """get_created_task_ids возвращает множество id из Redis."""
+        mock_redis = MagicMock()
+        mock_redis.smembers = AsyncMock(return_value={'1', '2'})
+        ids = await get_created_task_ids(mock_redis)
+        assert ids == {'1', '2'}
+
+    @pytest.mark.asyncio
+    async def test_mark_tasks_created_calls_sadd(self) -> None:
+        """mark_tasks_created добавляет id в Redis-множество."""
+        mock_redis = MagicMock()
+        mock_redis.sadd = AsyncMock()
+        await mark_tasks_created(mock_redis, ['3', '4'])
+        mock_redis.sadd.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_mark_tasks_created_empty_noop(self) -> None:
+        """Пустой список не обращается к Redis."""
+        mock_redis = MagicMock()
+        mock_redis.sadd = AsyncMock()
+        await mark_tasks_created(mock_redis, [])
+        mock_redis.sadd.assert_not_awaited()
 
 
 class TestBuildTask:

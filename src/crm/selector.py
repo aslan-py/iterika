@@ -21,22 +21,30 @@ def _rank(product: Product) -> tuple[int, float]:
 
 
 def select_interesting(
-    products: list[Product], limit: int = 2
+    products: list[Product],
+    limit: int = 2,
+    exclude_ids: set[str] | None = None,
 ) -> list[Product]:
     """Отбирает топ-`limit` позиций для задач менеджерам.
 
     Эвристика: самые дорогие товары приоритетного сегмента (Премиум →
     Стандарт → Эконом). Дедуплицирует по названию, чтобы две задачи
     не касались одной и той же модели.
+
+    exclude_ids — id товаров, по которым задачи уже созданы; они
+    пропускаются, чтобы повторный запуск брал следующие позиции.
     """
     if not products:
         return []
 
+    excluded = exclude_ids or set()
     ordered = sorted(products, key=_rank)
 
     selected: list[Product] = []
     seen_names: set[str] = set()
     for product in ordered:
+        if product.id in excluded:
+            continue
         key = product.name.strip().lower()
         if key in seen_names:
             continue
