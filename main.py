@@ -3,17 +3,26 @@
 Режимы запуска:
   uv run main.py                  весь пайплайн (продолжает с checkpoint)
   uv run main.py --fresh          весь пайплайн с нуля
-  uv run main.py --parsing        только парсинг
-  uv run main.py --parsing --fresh  только парсинг с нуля
-  uv run main.py --normalizer     только нормализация (последний wb_raw)
-  uv run main.py --llm            только LLM (последний normalized)
-  uv run main.py --crm            только CRM (последний classified)
+  uv run main.py --reset          очистить output/ и кэш Redis
+
+Этапные флаги комбинируются, порядок не важен:
+  uv run main.py --parsing                     только парсинг
+  uv run main.py --parsing --fresh             парсинг с нуля
+  uv run main.py --parsing --normalizer --llm  до classified, без CRM
+  uv run main.py --normalizer --llm --crm      со среднего этапа до конца
+  uv run main.py --llm                          последний normalized → LLM
+
+Смежные этапы передают данные в памяти; при разрыве (пропущен средний
+этап) данные берутся с последнего файла в output/. --reset выполняется
+до этапов, поэтому `--reset --parsing --llm` = чистый прогон.
 """
 import argparse
 import asyncio
+from pathlib import Path
 
 from loguru import logger
 
+from src.config import settings
 from src.crm.amocrm import create_tasks
 from src.crm.selector import select_interesting
 from src.llm.classifier import classify_all
@@ -21,6 +30,7 @@ from src.logger import setup_logging
 from src.normalizer.normalize import normalize_many, save_normalized
 from src.parser.wb import fetch_products, save_raw
 from src.redis_client import (
+    flush_cache,
     get_created_task_ids,
     make_redis,
     mark_tasks_created,
@@ -98,6 +108,33 @@ async def stage_crm(products: list | None = None) -> list:
     return tasks
 
 
+def _clear_output_dir() -> int:
+    """Удаляет все файлы из output/. Возвращает количество удалённых."""
+    out = Path(settings.output_dir)
+    removed = 0
+    if out.exists():
+        for item in out.iterdir():
+            if item.is_file():
+                item.unlink()
+                removed += 1
+    return removed
+
+
+async def stage_reset() -> None:
+    """Сброс: удаляет все файлы из output/ и очищает кэш Redis.
+
+    Удобно перед чистым прогоном с нуля.
+    """
+    removed = _clear_output_dir()
+    logger.info('output очищен: удалено {} файлов', removed)
+
+    redis = await make_redis()
+    if redis is not None:
+        await flush_cache(redis)
+    else:
+        logger.warning('Redis недоступен — кэш не очищен')
+
+
 async def run_full(fresh: bool) -> None:
     """Полный пайплайн: результаты передаются между этапами напрямую."""
     raw = await stage_parse(fresh)
@@ -115,44 +152,98 @@ async def run_full(fresh: bool) -> None:
     )
 
 
-async def _dispatch(args: argparse.Namespace) -> None:
-    """Выбирает: один этап или полный пайплайн."""
-    setup_logging()
+async def run_stages(args: argparse.Namespace) -> None:
+    """Выполняет выбранные этапы в порядке пайплайна.
+
+    Смежные выбранные этапы передают данные в памяти. Если этап выбран,
+    а предыдущий (в цепочке) не выполнялся — данные берутся с диска
+    (последний файл соответствующего типа). Порядок флагов в командной
+    строке не важен: последовательность задаёт код, а не ввод.
+    """
+    data: list | None = None   # результат последнего выполненного этапа
+    ran_previous = False       # выполнялся ли непосредственно предыдущий
 
     if args.parsing:
-        await stage_parse(args.fresh)
-    elif args.normalizer:
-        stage_normalize()
-    elif args.llm:
-        await stage_llm()
-    elif args.crm:
-        await stage_crm()
+        data = await stage_parse(args.fresh)
+        if not data:
+            return
+        ran_previous = True
     else:
+        ran_previous = False
+
+    if args.normalizer:
+        data = stage_normalize(data if ran_previous else None)
+        if not data:
+            return
+        ran_previous = True
+    else:
+        ran_previous = False
+
+    if args.llm:
+        data = await stage_llm(data if ran_previous else None)
+        if not data:
+            return
+        ran_previous = True
+    else:
+        ran_previous = False
+
+    if args.crm:
+        await stage_crm(data if ran_previous else None)
+
+
+async def _dispatch(args: argparse.Namespace) -> None:
+    """Маршрутизация: reset, набор этапов или полный пайплайн."""
+    setup_logging()
+
+    if args.reset:
+        await stage_reset()
+
+    stages_selected = (
+        args.parsing or args.normalizer or args.llm or args.crm
+    )
+
+    if stages_selected:
+        if args.fresh and not args.parsing:
+            logger.warning(
+                '--fresh указан, но парсинг не в наборе — '
+                'флаг проигнорирован'
+            )
+        await run_stages(args)
+    elif not args.reset:
+        # Ни этапов, ни reset — запускаем весь пайплайн
         await run_full(args.fresh)
 
 
 def _parse_args() -> argparse.Namespace:
-    """Разбирает аргументы CLI."""
+    """Разбирает аргументы CLI.
+
+    Этапные флаги комбинируются (--parsing --normalizer --llm).
+    Порядок не важен. --reset деструктивный, выполняется первым.
+    """
     parser = argparse.ArgumentParser(
         description='Пайплайн аналитики маркетплейсов'
     )
     parser.add_argument(
         '--fresh',
         action='store_true',
-        help='начать сбор заново, игнорируя checkpoint',
+        help='парсинг с нуля, игнорируя checkpoint (только с --parsing)',
     )
-    stage = parser.add_mutually_exclusive_group()
-    stage.add_argument(
-        '--parsing', action='store_true', help='только парсинг'
+    parser.add_argument(
+        '--parsing', action='store_true', help='этап парсинга'
     )
-    stage.add_argument(
-        '--normalizer', action='store_true', help='только нормализация'
+    parser.add_argument(
+        '--normalizer', action='store_true', help='этап нормализации'
     )
-    stage.add_argument(
-        '--llm', action='store_true', help='только LLM-классификация'
+    parser.add_argument(
+        '--llm', action='store_true', help='этап LLM-классификации'
     )
-    stage.add_argument(
-        '--crm', action='store_true', help='только задачи в CRM'
+    parser.add_argument(
+        '--crm', action='store_true', help='этап задач в CRM'
+    )
+    parser.add_argument(
+        '--reset',
+        action='store_true',
+        help='очистить output/ и кэш Redis (выполняется до этапов)',
     )
     return parser.parse_args()
 

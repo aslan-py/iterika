@@ -63,6 +63,12 @@ async def store_segments(
     logger.debug('Redis: сохранено {} сегментов', len(segments))
 
 
+async def flush_cache(client: aioredis.Redis) -> None:
+    """Полностью очищает базу Redis (сегменты + трекинг задач)."""
+    await client.flushdb()
+    logger.info('Redis: база очищена (FLUSHDB)')
+
+
 async def get_created_task_ids(client: aioredis.Redis) -> set[str]:
     """Возвращает id товаров, по которым уже созданы задачи в CRM."""
     return set(await client.smembers(_CRM_DONE_KEY))
