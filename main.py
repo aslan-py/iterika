@@ -15,6 +15,9 @@
 Смежные этапы передают данные в памяти; при разрыве (пропущен средний
 этап) данные берутся с последнего файла в output/. --reset выполняется
 до этапов, поэтому `--reset --parsing --llm` = чистый прогон.
+
+  uv run main.py --llm --no-cache  переклассифицировать без кэша
+                                    (после правки правил классификации)
 """
 import argparse
 import asyncio
@@ -66,7 +69,9 @@ def stage_normalize(
 
 
 async def stage_llm(
-    products: list | None = None, category: str = ''
+    products: list | None = None,
+    category: str = '',
+    use_cache: bool = True,
 ) -> list:
     """Этап 3 — LLM-классификация. Без аргумента берёт последний normalized."""
     if products is None:
@@ -77,7 +82,7 @@ async def stage_llm(
                 'сначала запустите нормализацию (--normalizer)'
             )
             return []
-    classified = await classify_all(products)
+    classified = await classify_all(products, use_cache=use_cache)
     save_normalized(
         classified, filename_prefix='classified', category=category
     )
@@ -143,13 +148,13 @@ async def stage_reset() -> None:
         logger.warning('Redis недоступен — кэш не очищен')
 
 
-async def run_full(fresh: bool) -> None:
+async def run_full(fresh: bool, use_cache: bool = True) -> None:
     """Полный пайплайн: результаты передаются между этапами напрямую."""
     raw = await stage_parse(fresh)
     if not raw:
         return
     products = stage_normalize(raw)
-    classified = await stage_llm(products)
+    classified = await stage_llm(products, use_cache=use_cache)
     tasks = await stage_crm(classified)
 
     logger.info(
@@ -192,7 +197,9 @@ async def run_stages(args: argparse.Namespace) -> None:
 
     if args.llm:
         data = await stage_llm(
-            data if ran_previous else None, category=category
+            data if ran_previous else None,
+            category=category,
+            use_cache=not args.no_cache,
         )
         if not data:
             return
@@ -226,7 +233,7 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await run_stages(args)
     elif not args.reset:
         # Ни этапов, ни reset — запускаем весь пайплайн
-        await run_full(args.fresh)
+        await run_full(args.fresh, use_cache=not args.no_cache)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -265,6 +272,12 @@ def _parse_args() -> argparse.Namespace:
         default='',
         help='категория для загрузки файла на отдельном этапе '
              '(например --crm --category смартфоны)',
+    )
+    parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='игнорировать Redis-кэш сегментов — всё заново в LLM '
+             '(для отладки правил классификации)',
     )
     return parser.parse_args()
 

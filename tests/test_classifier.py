@@ -217,10 +217,12 @@ class TestBuildPrompt:
         assert '1000' in prompt   # p_low
         assert '15000' in prompt  # p_high
 
-    def test_prompt_mentions_flagship_rule(self) -> None:
-        """Промпт содержит правило подъёма флагманов."""
+    def test_prompt_mentions_classification_rules(self) -> None:
+        """Промпт содержит блок правил классификации."""
         p = _make_product('1', 'iPhone', 1000.0)
-        assert 'ФЛАГМАН' in _build_prompt([p], _STATS)
+        prompt = _build_prompt([p], _STATS)
+        assert 'Правила классификации' in prompt
+        assert 'ПРЕМИУМ' in prompt
 
     def test_prompt_contains_expected_count(self) -> None:
         """Промпт содержит ожидаемое количество ответов."""
@@ -391,6 +393,40 @@ class TestClassifyAll:
 
         assert not batch_called
         assert all(p.segment == 'Премиум' for p in result)
+
+    @pytest.mark.asyncio
+    async def test_no_cache_forces_llm_despite_cache(self) -> None:
+        """use_cache=False игнорирует кэш — LLM вызывается заново."""
+        products = [
+            _make_product('1', 'A', 100.0),
+            _make_product('2', 'B', 5000.0),
+        ]
+        batch_called = False
+
+        async def _stub(
+            client: Any, chunk: list[Product], stats: Any
+        ) -> list[str]:
+            nonlocal batch_called
+            batch_called = True
+            return [Segment.ECONOMY.value] * len(chunk)
+
+        mock_pipe = MagicMock()
+        mock_pipe.execute = AsyncMock()
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(return_value=Segment.PREMIUM.value)
+        mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
+
+        with (
+            patch('src.llm.classifier.make_redis', return_value=mock_redis),
+            patch('src.llm.classifier.get_segment', return_value='Премиум'),
+            patch('src.llm.classifier._classify_batch', new=_stub),
+        ):
+            result = await classify_all(products, use_cache=False)
+
+        # несмотря на кэш 'Премиум', LLM вызван и вернул 'Эконом'
+        assert batch_called
+        assert all(p.segment == Segment.ECONOMY.value for p in result)
 
     @pytest.mark.asyncio
     async def test_batching_splits_products_correctly(self) -> None:

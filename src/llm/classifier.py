@@ -24,43 +24,13 @@ from tenacity import (
 )
 
 from src.config import settings
+from src.llm.prompts import (
+    _CLASSIFICATION_RULES,
+    _PROMPT_TEMPLATE,
+    _SYSTEM,
+)
 from src.models import Product, Segment
 from src.redis_client import get_segment, make_redis, store_segments
-
-_SYSTEM = (
-    'Ты — аналитик ценовых сегментов товаров на маркетплейсах. '
-    'Определяй сегмент каждого товара: Эконом, Стандарт или Премиум.'
-)
-
-# ── Правила классификации ─────────────────────────────────────────
-# Редактируйте здесь, чтобы изменить логику присвоения сегментов
-# без правки кода функции _build_prompt.
-_CLASSIFICATION_RULES = (
-    'Правила классификации (по порядку):\n'
-    '1. БАЗА — определи сегмент по цене и границам выше.\n'
-    '2. ПОДЪЁМ ФЛАГМАНОВ — если это узнаваемая премиальная или '
-    'флагманская модель (например iPhone, Galaxy S/Z/Fold/Ultra, '
-    'топовые флагманы брендов), поставь Премиум ДАЖЕ при низкой цене '
-    '— это премиальная вещь по сниженной цене.\n'
-    '3. НЕ ПОДНИМАЙ бюджетные и средние линейки (например Redmi, '
-    'Galaxy A/M, realme C, POCO бюджетные, безымянные) только из-за '
-    'бренда — для них решает цена.'
-)
-
-# Шаблон промпта. Плейсхолдеры подставляются в _build_prompt.
-# Литеральные фигурные скобки JSON экранированы удвоением ({{ }}).
-_PROMPT_TEMPLATE = (
-    'Категория: {category}.\n'
-    'Ценовые границы сегментов (по данной выборке):\n'
-    '  Эконом:    до {p_low:.0f} руб\n'
-    '  Стандарт:  {p_low:.0f} – {p_high:.0f} руб\n'
-    '  Премиум:   от {p_high:.0f} руб\n\n'
-    '{rules}\n\n'
-    'Товары:\n{body}\n\n'
-    'Ответь JSON: {{"segments": [...]}} — '
-    'ровно {count} строк в том же порядке.\n'
-    'Допустимые значения: Эконом, Стандарт, Премиум.'
-)
 
 _VALID = {s.value for s in Segment}
 
@@ -237,7 +207,9 @@ async def _load_cache(
     return cached, uncached
 
 
-async def classify_all(products: list[Product]) -> list[Product]:
+async def classify_all(
+    products: list[Product], use_cache: bool = True
+) -> list[Product]:
     """Классифицирует все товары с дедупликацией по названию и кэшем.
 
     Алгоритм:
@@ -246,6 +218,10 @@ async def classify_all(products: list[Product]) -> list[Product]:
     3. Уникальные новые названия батчами отправляем в DeepSeek.
     4. После каждого батча пишем результат в Redis (устойчиво к сбою).
     5. Разносим сегменты обратно на все товары исходного списка.
+
+    use_cache=False — игнорировать кэш чтения: все товары уходят в LLM
+    заново (нужно после изменения правил классификации), результаты
+    перезаписывают старый кэш.
     """
     if not products:
         return []
@@ -268,9 +244,15 @@ async def classify_all(products: list[Product]) -> list[Product]:
 
     # --- Шаг 2: Redis-кэш по названию ---
     redis: aioredis.Redis | None = await make_redis()
-    key_to_segment, uncached_keys = await _load_cache(
-        redis, list(groups)
-    )
+    if use_cache:
+        key_to_segment, uncached_keys = await _load_cache(
+            redis, list(groups)
+        )
+    else:
+        # Отладка промпта: игнорируем кэш чтения, всё в LLM заново
+        key_to_segment, uncached_keys = {}, list(groups)
+        logger.info('Кэш чтения отключён (--no-cache) — всё заново в LLM')
+
     if redis is not None:
         logger.info(
             'Redis кэш: {} названий из кэша, {} на классификацию',

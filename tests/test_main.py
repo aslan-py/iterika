@@ -23,6 +23,7 @@ def _args(**flags: bool) -> argparse.Namespace:
         'crm': False,
         'reset': False,
         'category': '',
+        'no_cache': False,
     }
     defaults.update(flags)
     return argparse.Namespace(**defaults)
@@ -89,7 +90,9 @@ class TestRunStages:
             calls.append('normalize')
             return ['product']
 
-        async def _llm(data: object, category: str = '') -> list:
+        async def _llm(
+            data: object, category: str = '', use_cache: bool = True
+        ) -> list:
             calls.append('llm')
             return ['classified']
 
@@ -139,7 +142,9 @@ class TestRunStages:
         async def _parse(fresh: bool) -> list:
             return [{'id': 1}]
 
-        async def _llm(data: object, category: str = '') -> list:
+        async def _llm(
+            data: object, category: str = '', use_cache: bool = True
+        ) -> list:
             received['llm_arg'] = data
             return ['classified']
 
@@ -156,7 +161,9 @@ class TestRunStages:
     @pytest.mark.asyncio
     async def test_fresh_without_parsing_warns(self) -> None:
         """--fresh без --parsing пишет предупреждение и не роняет."""
-        async def _llm(data: object, category: str = '') -> list:
+        async def _llm(
+            data: object, category: str = '', use_cache: bool = True
+        ) -> list:
             return ['classified']
 
         with (
